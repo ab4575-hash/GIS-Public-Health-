@@ -1,0 +1,241 @@
+---
+title: "Homework Assignment 1"
+author: "Anaisía Brown"
+date: "2026-10-07"
+output:
+  pdf_document: default
+
+  
+---
+
+```{r}
+#shortcut for installing necessary packages.
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE, message = FALSE)
+
+packages <- c("tidygeocoder", "sf", "terra", "tidyverse", "tidycensus", "flextable", "tmap")
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) {install.packages(packages[!installed])}
+lapply(packages, library, character.only = TRUE)
+
+```
+
+##Geocoding
+
+#Q1. Import this In N Out Burger CSV file.
+
+```{r q1chunk1}
+#part a.
+download.file("https://raw.githubusercontent.com/pjames-ucdavis/SPH215/refs/heads/main/innout_final.csv","innout_final.csv", mode = "wb")
+
+#part b.
+in_n_out <- read_csv("innout_final.csv")
+```
+
+#Q2. Glimpse at the data. What is the address field that you might want to geocode?
+```         
+We would want to geocode the "store address" field. 
+```
+```{r q2chunk2}
+#Glimpse at data. 
+glimpse(in_n_out)
+
+#To view data as an Excel document. 
+view(in_n_out)
+
+#Look specifically at "store address" column.
+head(in_n_out$`store address`)
+
+```
+#Q3. Geocode the data using the “arcgis” geocoder in the tidygeocoder package.
+```{r q3chunk3}
+in_n_out_geo <- geocode(in_n_out,"store address", method = "arcgis")
+head(in_n_out_geo)
+```
+
+#Q4. Take a look at the lat and long columns. Do we have missing data?
+     Based on the summary reports, there are no missing (NAs) addresses for the 
+     latitude or the longitude.
+```{r q4chunk4}
+#check for missing data in each column 
+
+#latitude
+summary(in_n_out_geo$lat)
+
+#longitude
+summary(in_n_out_geo$long)
+
+```
+
+#Q5.Make the data set spatial with a CRS of WGS 84 (hint: crs=4326).
+```{r q5chunk5}
+#Specify the lat, long coordinates for R
+in_n_out_points <- st_as_sf(in_n_out_geo, coords = c("long", "lat"))
+
+#check if there's a CRS.
+st_crs(in_n_out_points)           #ResultCRS:NA
+
+#Set CRS of WGS 84
+in_n_out_crs <- st_set_crs(in_n_out_points, 4326)
+
+#Check the CRS
+st_crs(in_n_out_crs)
+
+```
+
+#Q6. Map the addresses using the tmap package. Make the points red.
+```{r q6chunk6}
+
+#Establish Map View 
+tmap_mode("view")
+
+#Map w/ Red Points
+burger_map = tm_shape(in_n_out_crs) + tm_dots( fill = "red", size= 0.3, fill_alpha = 0.5)
+burger_map
+
+```
+
+#Q7. Make blue points!
+```{r q7chunk7}
+
+#Establish Map View 
+tmap_mode("view")
+
+#Map w/ Blue Points
+burger_map_b = tm_shape(in_n_out_crs) + tm_dots( fill = "blue", size= 0.3, fill_alpha = 0.5)
+burger_map_b
+
+```
+
+##Map Point Health Data
+
+#Q8. Import the CAdata dataset from the MapGAM package.
+The MapGAM package wouldn't load, so I imported the data from the class GitHUb.
+```{r q8chunk8}
+
+#CAdata Dataset
+download.file("https://raw.githubusercontent.com/pjames-ucdavis/SPH215/refs/heads/main/CAdata.rds", "CAdata.rds", mode = "wb")
+
+#read CAdata
+cancer <- readRDS("CAdata.rds")
+
+#View dataset 
+summary(cancer)
+view (cancer)
+
+```
+
+#Q9. Add a coordinate reference system to the CAdata dataset and make sure it’s a spatial dataset that you can map.
+```{r q9chunk9}
+#Define the "X" and "Y" coordinates for R. 
+cancer_points <- st_as_sf(cancer, coords=c("X","Y"))
+
+#Identify if there's a CRS.
+st_crs(cancer_points)          #CRSResult: NA
+
+#Load CRS dataset
+ca_projection <- "+proj=lcc +lat_1=40 +lat_2=41.66666666666666 
+             +lat_0=39.33333333333334 +lon_0=-122 +x_0=2000000 
+             +y_0=500000.0000000002 +ellps=GRS80 
+             +datum=NAD83 +units=m +no_defs"
+#Add CRS
+cancer_points_crs <- st_set_crs(cancer_points, ca_projection)
+
+#Check CRS
+st_crs(cancer_points_crs)
+
+#Confirmed it's a spatial data set!
+```
+
+#Q10. Create a map of the CAdata data set with points color coded by Insurance Status using the tmap package.
+```{r q10chunk10}
+
+#Establish Map Interactive Mode 
+tmap_mode("view")
+
+#Construct a map based on "Insurance Status in CA"
+insur_map = tm_shape(cancer_points_crs) + tm_dots(fill="INS", fill.scale=tm_scale_categorical())
+
+#View Map
+insur_map
+
+```
+
+##Census Data
+
+#Q11. Use the tidycensus package to download American Community Survey Five year estimates from 2018-2022 in California at the Census tract level for the following variable: a. Household Median Income = “B19013_001”
+```{r q11chunk11}
+#census_api_key("86fccf503d859dae6884ddca2dbf66c8372bc5c7", install = TRUE)"
+#API Key saved to R Environment - comment out to avoid multiple downloads 
+
+#Loading variable in ACS data set from 2018-2022   
+acs2022 <- load_variables(2022, "acs5", cache = TRUE)
+view(acs2022)
+
+#Extract Household Median Income data from 2018-2022
+ca <- get_acs(geography = "tract", 
+              year = 2022,
+              variables = c(medincome = "B19013_001"), 
+              state = "CA",
+              survey = "acs5",
+              output = "wide")
+ca
+
+```
+
+#Q12. Take a glimpse at your data
+```{r q12chunk12}
+
+glimpse(ca)
+
+```
+
+#Q13. Give us the mean median household income across tracts in California.
+```{r q13chunk13}
+#Descriptive statistics Include na.rm = TRUE argument to omit "missingness". 
+
+ca %>%
+summarize(Mean = mean(medincomeE, na.rm = TRUE))
+
+#The mean median household income across tracts in CA is $99,732.02.
+```
+
+#Q14. Make a table showing the mean, median, and standard deviation of median household income across tract in California, and make it look fancy!
+```{r q14chunk14}
+#The mean, median, and SD of median household incomes acorss tract in CA
+tract <- ca %>%
+summarize (Mean = mean(medincomeE, na.rm = TRUE),
+   Median = median(medincomeE, na.rm = TRUE),
+   SD = sd(medincomeE, na.rm = TRUE))
+
+#Table summary of Measure of Central Tendency 
+ttable  <- flextable (tract)
+ttable
+
+#Table w/ clearer labels 
+tract_table <- ttable %>% 
+  set_header_labels(Mean ="Mean", Median = "Median", SD = "Standard Deviation") %>% flextable::align(align = "center", part = "all")
+
+tract_table
+
+```
+
+#Q15. Create a histogram of median household income across tracts in California. 
+Make sure it has a label.
+```{r q15chunk15}
+
+#create histogram across tracts in CA  
+ca %>%
+  ggplot() +
+  geom_histogram(mapping = aes(x=medincomeE)) + xlab("CA Median Household Income")
+
+```
+
+#Q16. OK now give me a boxplot! And I want a nice label for this too.
+```{r q16chunk16}
+#create boxplot for MHI across CA tract
+ca %>%
+  ggplot() +
+  geom_boxplot(mapping = aes(y = medincomeE,)) + ylab("CA Median Household Income")
+
+```
