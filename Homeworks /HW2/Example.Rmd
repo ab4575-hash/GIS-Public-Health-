@@ -1,0 +1,343 @@
+---
+title: "Lab 3"
+author: "Anaisía Brown"
+date: "2026-10-07"
+output: pdf_document
+---
+
+```{r q0chunk1}
+
+library(sf)
+library(tidyverse)
+library(tidycensus)
+library(flextable)
+library(RColorBrewer)
+library(tmap)
+library(terra)
+
+```
+
+
+```{r q1chunk2}
+#Bring in Census Tarct Racial Composition 
+
+ca.tracts <- get_acs(geography = "tract", 
+              year = 2023,
+              variables = c(tpopr = "B03002_001", 
+                            nhwhite = "B03002_003", nhblk = "B03002_004", 
+                            nhasn = "B03002_006", hisp = "B03002_012"), 
+              state = "CA",
+              output = "wide",
+              survey = "acs5",
+              geometry = TRUE, #means to give me the geometry for that tract
+              cb = FALSE)
+
+#Quick Look at Data
+
+ca.tracts
+
+## Using FIPS code '06' for state 'CA' i.e "06---001442700"
+
+```
+
+
+
+#Break up the main variable 
+
+```{r q2chunk3}
+ca.tracts <- ca.tracts %>%
+              separate(NAME, c("Tract", "County", "State"), sep = "; ")
+
+glimpse(ca.tracts)
+
+```
+
+#Bring in a Census tract income dataset 
+
+```{r q3chunk4}
+
+ca.inc <- get_acs(geography = "tract", 
+              year = 2023,
+              variables = c(medinc = "B19013_001"), 
+              state = "CA",
+              survey = "acs5",
+              output = "wide")
+
+#Geometry is not mentioned here. You won't get the spatial component unless geometry is mentioned.
+
+```
+
+#Join the two datasets - one spatial and one not, the non-spatial dataset is added to the spatial one
+
+```{r}
+ca.tracts <- ca.tracts %>%
+  left_join(ca.inc, by = "GEOID")
+
+#take a look to make sure the join worked
+glimpse(ca.tracts)
+
+```
+# Map It
+
+```{r q5chunk6}
+
+tmap_mode("plot")
+
+tract_map <- tm_shape(ca.tracts) +   tm_polygons()
+tract_map
+
+methods(class = "sf")
+
+```
+
+#Read in another dataset 
+
+```{r q5chunk6}
+
+url <- "https://github.com/pjames-ucdavis/SPH215/raw/main/sac.metro.rds"
+download.file(url, destfile = "sac.metro.rds", mode = "wb")
+sac.metro <- readRDS("sac.metro.rds")
+
+
+glimpse(sac.metro)
+
+```
+#intersect our sac.metro dataset with our ca.tracts dataset
+
+```{r}
+
+sac.metro.tracts.int <- st_join(ca.tracts, sac.metro, 
+join = st_intersects, left=FALSE)
+
+tm_shape(sac.metro.tracts.int) +
+  tm_polygons(col = "blue") +
+tm_shape(sac.metro) +  
+  tm_borders(col = "red")
+                                
+```      
+#We can instead use the argument join = st_within to return tracts that are completely within the metro area.
+
+```{r}
+
+sac.metro.tracts.w <- st_join(ca.tracts, sac.metro, join = st_within, left=FALSE)
+
+tm_shape(sac.metro.tracts.w) +
+  tm_polygons(col = "blue") +
+tm_shape(sac.metro) +
+  tm_borders(col = "red")
+
+#Contains ALL of the tracts within Sac-Metro 
+
+```
+```{r}
+#Initial Map
+ggplot(data = sac.metro.tracts.w) +
+  geom_sf(aes(fill = medincE))
+
+
+#Titles added
+ggplot(data = sac.metro.tracts.w) +
+  geom_sf(aes(fill = medincE)) +
+    labs(title = "Median Income Sacramento MSA Tracts") 
+
+#Change color scheme 
+
+ggplot(data = sac.metro.tracts.w) +
+  geom_sf(aes(fill = medincE), color = NA) +
+    scale_fill_gradient(low= "white", high = "red", na.value ="gray", name = "Median Income") +  
+    labs(title = "Median Income Sacramento MSA Tracts",
+         caption = "Source: American Community Survey") +  
+  theme_bw()
+
+```
+```{r}
+#CAdata Dataset
+download.file("https://raw.githubusercontent.com/pjames-ucdavis/SPH215/refs/heads/main/CAdata.rds", "CAdata.rds", mode = "wb")
+
+#read CAdata
+CAdata <- readRDS("CAdata.rds")
+
+#View dataset 
+summary(CAdata)
+ca_pts <- st_as_sf(CAdata, coords=c("X","Y"))
+
+ca_proj <- "+proj=lcc +lat_1=40 +lat_2=41.66666666666666 
+             +lat_0=39.33333333333334 +lon_0=-122 +x_0=2000000 
+             +y_0=500000.0000000002 +ellps=GRS80 
+             +datum=NAD83 +units=m +no_defs"
+
+#Set CRS
+ca_pts_crs <- st_set_crs(ca_pts, ca_proj)
+
+```
+
+```{r}
+
+ggplot(data = ca_pts_crs) +
+  geom_sf(fill = "black") +
+  labs(title = "Study Participants",
+       caption = "Source: Ovarian Cancer Cases") +  
+  theme_bw()
+
+```
+```{r}
+ggplot() +
+  geom_sf(data = sac.metro.tracts.w) +
+  geom_sf(data = ca_pts_crs, fill = "black") +
+  labs(title = "Study Participants",
+       caption = "Source: Ovarian Cancer Cases") +  
+  theme_bw()
+
+```
+
+```{r}
+ca_pts_crs.w <- st_join(ca_pts_crs, sac.metro.tracts.w, join = st_within, left=FALSE)
+
+#The CRS are not equal/matching, so...
+
+#check crs of each dataset
+st_crs(ca_pts_crs)
+
+#create new dataset with transformed CRS
+ca_pts_crs.transformed <- st_transform(ca_pts_crs,st_crs(sac.metro.tracts.w))
+
+st_crs(ca_pts_crs.transformed )
+
+ca_pts_crs.w <- st_join(ca_pts_crs.transformed, sac.metro.tracts.w, join = st_within, left=FALSE)
+
+#Retry the Map 
+
+ggplot() +
+  geom_sf(data = sac.metro.tracts.w) +
+  geom_sf(data = ca_pts_crs.w, fill = "black") +
+  labs(title = "Study Participants",
+       caption = "Source: Ovarian Cancer Cases") +  
+  theme_bw() #Black and white background 
+
+```
+```{r}
+ggplot() + 
+  geom_sf(data = sac.metro.tracts.w, aes(fill = medincE), color = NA) +
+    scale_fill_gradient(low= "white", high = "red", na.value ="gray", name = "Median Income") +  #gradient from white to red 
+  
+  geom_sf(data = ca_pts_crs.w, fill = "black") + #fill points in black 
+  labs(title = "Study Participants Overlaid with Median Income of Sacramento Tracts",
+       caption = "Source: American Community Survey and Ovarian Cancer Cases") +
+  theme_bw() #black nad white background 
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#Raster Data 
+
+```{r}
+
+#NDVI - from satellite data the density of vegetation based on light.
+#NDVI goes from -1 to 1 
+
+url <- "https://github.com/pjames-ucdavis/SPH215/raw/main/NDVI_rast2.tif"
+download.file(url, destfile = "NDVI_rast2.tif", mode = "wb")
+NDVI_raster = rast("NDVI_rast2.tif")
+
+## Get summary of raster data
+NDVI_raster
+
+## Check CRS
+st_crs(NDVI_raster)
+
+```
+
+```{r}
+## Plot the raster on a map
+tmap_mode("plot")
+
+NDVI_map <-  tm_shape(NDVI_raster) +
+  tm_raster(col.scale = tm_scale_continuous(),
+            col.legend = tm_legend(outside = TRUE))
+
+NDVI_map      #Make map continuous and legend outside 
+
+```
+
+
+```{r}
+# palette for plotting
+breaks_ndvi <- c(-1,-0.2,-0.1,0,0.025 ,0.05,0.075,0.1,0.125,0.15,0.175,0.2 ,0.25 ,0.3 ,0.35,0.4,0.45,0.5,0.55,0.6,1)
+palette_ndvi <- c("#BFBFBF","#DBDBDB","#FFFFE0","#FFFACC","#EDE8B5","#DED99C","#CCC782","#BDB86B","#B0C261","#A3CC59","#91BF52","#80B347","#70A340","#619636","#4F8A2E","#407D24","#306E1C","#216112","#0F540A","#004500")
+
+NDVI_map <-  tm_shape(NDVI_raster) +
+  tm_raster(col.scale = tm_scale_continuous(values = palette_ndvi),
+            col.legend = tm_legend(title = "NDVI", outside = TRUE))
+NDVI_map
+
+```
+```{r}
+sf_rast<-crop(NDVI_raster, ext(-122.55, -122.35, 37.7, 37.83)) #lat/long coordinates 
+
+tmap_mode("plot")
+
+NDVI_sf_map <- tm_shape(sf_rast) +
+  tm_raster(col.scale = tm_scale_continuous(),
+            col.legend = tm_legend(title = "NDVI", outside = TRUE))
+
+NDVI_sf_map #Zoomed more into SF - more detail of the City and green-space (parks/vegetation)
+
+```
+
+#Change the water from purple 
+```{r}
+sf_rast_neg <- app(sf_rast, fun=function(x){ x[x <= 0] <- -1; return(x)} ) #Use negative contrast 
+
+NDVI_sf_map_neg <- tm_shape(sf_rast_neg) +
+  tm_raster(col.scale = tm_scale_continuous(),
+            col.legend = tm_legend(title = "NDVI", outside = TRUE))
+
+NDVI_sf_map_neg
+```
+
+
+```{r}
+
+#Bring in the CAdata set and make sure that they match 
+#Transform our point data to raster data 
+
+
+data(CAdata)
+ca_pts <- CAdata
+ca_proj <- "+proj=lcc +lat_1=40 +lat_2=41.66666666666666 
+             +lat_0=39.33333333333334 +lon_0=-122 +x_0=2000000 
+             +y_0=500000.0000000002 +ellps=GRS80 
+             +datum=NAD83 +units=m +no_defs"
+
+ca_pts <- st_as_sf(CAdata, coords=c("X","Y"), crs=ca_proj)
+
+```
+
