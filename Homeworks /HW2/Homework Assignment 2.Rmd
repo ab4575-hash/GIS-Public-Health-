@@ -1,0 +1,208 @@
+---
+title: "Homework Assignment 2"
+author: "Anaisía Brown"
+date: "2026-10-14"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+# Census Data
+
+```{r setup, include=FALSE}
+#Load Packages 
+library(sf)
+library(tidyverse)
+library(tidycensus)
+library(tidygeocoder)
+library(flextable)
+library(RColorBrewer)
+library(tmap)
+library(terra)
+```
+
+## 1) Use the tidycensus package to download American Community Survey five-year estimates from 2019-2023 in California at the County level for the following variable, including spatial data: a.) Household Median Income = “B19013_001”
+
+```{r q1chunk2, echo = FALSE}
+#ACS Data-setfrom 2019-2023 w/ spatial features
+#The "geometry = TRUE" imports spatial features. 
+ca.tracts <- get_acs(geography = "tract", 
+              year = 2023,
+              variables = c(medinc = "B19013_001"),
+              state = "CA",
+              output = "wide",
+              survey = "acs5",
+              geometry = TRUE,
+              cb = FALSE)
+ca.tracts
+
+#Organize/Separate the "NAME" column 
+ca.tracts <- ca.tracts %>%
+             separate(NAME, c("Tract", "County", "State"), 
+                       sep = "; ")
+
+```
+
+## 2) Take a glimpse at your data.
+
+```{r q2chunk3}
+#Glimpse at data set w/ "NAME" column separated & joined files 
+
+glimpse(ca.tracts)
+
+```
+
+## 3) Make a map of median income by County.
+
+```{r q3chunk4}
+
+tmap_mode("plot") #Best tmap mode for knitting file 
+
+tract_map <- tm_shape(ca.tracts) +   tm_polygons()
+
+tract_map
+```
+
+## 4) Now can you change the color palette?
+
+```{r q4chunk5}
+
+#Changed the tracts to be a green color scheme 
+tm_shape(ca.tracts) +
+  tm_polygons(fill = "medincE", 
+  fill.scale = tm_scale_intervals(style = "quantile", n=4, values = "Greens"))
+```
+
+## 5) Can you add a nice title and add a legend?
+
+```{r, echo=FALSE, q5chunk6 }
+tm_shape(ca.tracts) +
+  tm_polygons(fill = "medincE", 
+              fill.scale = tm_scale_intervals(style = "quantile",n=4,
+                                              values = "brewer.greens"),
+              fill.legend = tm_legend(title = "Median Income")) + 
+  tm_layout(legend.outside = TRUE, legend.outside.position = "right") +
+  tm_title(text = "Median Income of CA Tracts",
+           size = 1.25, 
+           position = tm_pos_out("center","top"))
+```
+
+# Raster Data
+
+## 6) Import land surface temperature data with the terra package.
+
+```{r, echo=FALSE, q6chunk7}
+#Importing land surface temp data 
+
+url <- "https://github.com/pjames-ucdavis/SPH215/raw/main/LST_med_ca.tif"
+
+download.file(url, destfile = "LST_med_ca.tif", mode = "wb")
+
+LST_raster = rast("LST_med_ca.tif")
+
+#Summary of raster data 
+LST_raster
+
+#Check CRS
+st_crs(LST_raster)
+```
+
+## 7) Make a map of land surface temperature across California
+
+```{r q7chunk8}
+tmap_mode("plot")
+
+LST_map <-  tm_shape(LST_raster) +
+  tm_raster(col.scale = tm_scale_continuous(),
+            col.legend = tm_legend(outside = TRUE))
+LST_map
+
+# palette for plotting
+palette_ndvi <- c("#BFBFBF","#DBDBDB","#FFFFE0","#FFFACC","#EDE8B5","#DED99C","#CCC782","#BDB86B","#B0C261","#A3CC59","#91BF52","#80B347","#70A340","#619636","#4F8A2E","#407D24","#306E1C","#216112","#0F540A","#004500")
+
+LST_map <-  tm_shape(LST_raster) +
+  tm_raster(col.scale = tm_scale_continuous(values = palette_ndvi),
+            col.legend = tm_legend(title = "LST Median", outside = TRUE)) + tm_title(text = "LST Across CA",
+           size = 1.25, 
+           position = tm_pos_out("center","top"))
+LST_map
+
+```
+
+## 8) Crop to these coordinates: ext(-122.8, -121.5, 37.5, 38.6) and make a map again.
+
+```{r q8chunk9}
+
+#Crop coordinates 
+LST_crop <-crop(LST_raster, ext(-122.8, -121.5, 37.5, 38.6))
+
+#Plot LST Raster Map w/ Cropped Coordinates
+tmap_mode("plot")
+
+LST_ca <- tm_shape(LST_crop) + tm_raster(col.scale = tm_scale_continuous(values = palette_ndvi), col.legend = tm_legend(title = "LST Median", outside = TRUE)) + tm_title(text = "LST Across CA",size = 1.25, position = tm_pos_out("center","top"))
+
+LST_ca
+
+```
+
+### 8) Continued...
+
+```{r q8chunk10}
+
+# #Use negative values to distinguish between land and water 
+# 
+# lst_rast_neg <- app(LST_crop, fun=function(x){ x[x<= 0] <- -1; return(x)})
+# 
+# lst_crs_map_neg <- tm_shape(lst_rast_neg) +
+#   tm_raster(col.scale = tm_scale_continuous(),
+#             col.legend = tm_legend(title = "CA Median LST", outside = TRUE))
+# 
+# lst_crs_map_neg
+
+```
+
+# Overlay Cancer and Land surface temperature Data
+
+## 9) Bring in our old CAdata ovarian cancer data set
+
+```{r q9chunk11}
+download.file("https://raw.githubusercontent.com/pjames-ucdavis/SPH215/refs/heads/main/CAdata.rds", "CAdata.rds", mode = "wb")
+
+CAdata <- readRDS("CAdata.rds")
+
+ca_pts <- CAdata
+ca_proj <- "+proj=lcc +lat_1=40 +lat_2=41.66666666666666 
+             +lat_0=39.33333333333334 +lon_0=-122 +x_0=2000000 
+             +y_0=500000.0000000002 +ellps=GRS80 
+             +datum=NAD83 +units=m +no_defs"
+
+ca_pts <- st_as_sf(CAdata, coords=c("X","Y"), crs=ca_proj)
+
+```
+
+## 10) Overlay a map of CAdata with the geocoded participant addresses in red on top of a map of the land surface temperature data for the whole state (not just what you cropped to).
+
+```{r q10chunk12}
+#Compare the data sets CRS
+st_crs(ca_pts)
+st_crs(LST_crop)
+
+#Transform - Make them on the same projection 
+ca_pts_proj <- st_transform(ca_pts,st_crs(LST_crop))
+
+#Compare once more 
+st_crs(ca_pts_proj)
+st_crs(LST_crop)
+
+#Overlay Maps - w/o cropped coordinates 
+tmap_mode("plot")
+
+lst_cancer_map <-  tm_shape(LST_raster) +
+  tm_raster(col.scale = tm_scale_continuous(),
+            col.legend = tm_legend(title = "CA Median LST", outside = TRUE)) +
+  tm_shape(ca_pts_proj) +
+  tm_dots(fill = "red", fill_alpha = 0.5, size = 0.3)
+
+lst_cancer_map
+```
